@@ -21,3 +21,6 @@ xnat/webapps
 *.env
 !default.env
 
+
+*.csv
+

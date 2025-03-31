@@ -91,16 +91,16 @@ def main_loop(source_dir, batch):
         #break
 
 def main():
-    #batches = ['batch_1', 'batch_2', 'batch_3', 'batch_4', 'batch_5', 'batch_6', 'batch_7', 'batch_8', 'batch_9', 'batch_10', 'batch_11']
-    batches=['batch_1']
-    failed_outputs = {}
+    batches = ['batch_1', 'batch_2', 'batch_3', 'batch_4', 'batch_5', 'batch_6', 'batch_7', 'batch_8', 'batch_9', 'batch_10']
+    #batches=['batch_10']
+    #failed_outputs = {}
     for batch in batches:
         #source_dir = f'D:\\xnat\\1.8\\inbox\\STAMPEDE-AJ\\{batch}\\'
         source_dir = f'/mnt/d/xnat/1.8/inbox/STAMPEDE-AJ/{batch}/'
-        failed_outputs[batch] = main_loop(source_dir, batch)
+        _ = main_loop(source_dir, batch)
 
-        df = pl.from_dict(failed_outputs)
-        df.write_csv(f'./outputs/failed_uploads_{PROJECT}_{batch}.csv')
+        #df = pl.from_dict(failed_outputs)
+        #df.write_csv(f'./outputs/failed_uploads_{PROJECT}_{batch}.csv')
         
 
 if __name__ == '__main__':
