@@ -12,7 +12,7 @@ import time
 import polars as pl
 from datetime import datetime
 
-PROJECT='STAMPEDE-AJ'
+PROJECT='STAMPEDE-ACE'
 #path_to_cert = '/mnt/d/xnat/XNAT-stampede/configs/xnat-release/ssl/xnat-vagrant-CA.pem' 
 #'D:\\xnat\\XNAT-stampede\\configs\\xnat-release\\ssl\\xnat-vagrant-CA.pem'
 #url = 'https://release.xnat.org'
@@ -91,12 +91,13 @@ def main_loop(source_dir, batch):
         #break
 
 def main():
-    batches = ['batch_1', 'batch_2', 'batch_3', 'batch_4', 'batch_5', 'batch_6', 'batch_7', 'batch_8', 'batch_9', 'batch_10']
-    #batches=['batch_10']
+    #batches = ['batch_1', 'batch_2', 'batch_3', 'batch_4', 'batch_5', 'batch_6', 'batch_7', 'batch_8', 'batch_9', 'batch_10']
+    batches=['batch_1']
     #failed_outputs = {}
     for batch in batches:
         #source_dir = f'D:\\xnat\\1.8\\inbox\\STAMPEDE-AJ\\{batch}\\'
-        source_dir = f'/mnt/d/xnat/1.8/inbox/STAMPEDE-AJ/{batch}/'
+        #source_dir = f'/mnt/d/xnat/1.8/inbox/STAMPEDE-AJ/{batch}/'
+        source_dir=f'/mnt/h/ACE_batches_to_upload/{batch}/'
         _ = main_loop(source_dir, batch)
 
         #df = pl.from_dict(failed_outputs)

@@ -17,7 +17,7 @@ root_dir = '/mnt/j/All Scans/'
 
 
 #root_dir = 'G:\\ArmK\\DICOM\\'
-arms_to_check = ['ACE']#'ACE' 'AG''AH',
+arms_to_check = ['AG']#'ACE' 'AG''AH',
 # skippable = ['SR Dose Report', '] 
 header_keys = {
     'patient_id': '0010|0010', 
