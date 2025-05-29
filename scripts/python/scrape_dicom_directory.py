@@ -75,17 +75,21 @@ def main():
     cpus = cpu_count()//2
     pool = Pool(processes=cpus)
     print(f'Allocating {cpus} cpus to the job!')
-    for path in paths_to_scan:
-        if path == end_skip:
-            skip = False
+    #pool.map_async
+    
+    #for path in paths_to_scan:
+        # if path == end_skip:
+        #     skip = False
 
-        if skip:
-            continue
+        # if skip:
+        #     continue
             #print(f'Scanning {path}')
-        print(f'Adding {path} to Pool')
-        pool.apply_async(thread_process, args=(path,))
+
+
+        #print(f'Adding {path} to Pool')
+    pool.map(thread_process, paths_to_scan)
     pool.close()
-    pool.join()
+    #pool.join()
 
     conn.close()
 
@@ -135,7 +139,7 @@ def read_header(path):
     return data
 
 def record_error(path, e):
-    print('ERROR:', e)
+    #print('ERROR:', e)
     err = {'filepath': path, 'error': str(e), 'dirname': os.path.dirname(path)}
     columns = ', '.join(err.keys())
     placeholders = ':'+', :'.join(err.keys())
@@ -151,6 +155,7 @@ def filter_filepaths(source):
             if root in paths_to_skip and len(files) == paths_to_skip[root]:
                 continue
             
+            ## Skip these -- SimpleITK can't read them and they're not useful
             if '[CT - KEY IMAGES]' in root:
                 continue
             if '[PT - KEY IMAGES]' in root:
@@ -235,8 +240,6 @@ def init_db(db_filename):
     ## Delete from memory
     del dicoms_to_skip, errors_to_skip
     gc.collect()
-
-
 
 
 if __name__ == '__main__':
