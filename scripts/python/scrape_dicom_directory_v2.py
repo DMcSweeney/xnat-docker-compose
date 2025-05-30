@@ -18,13 +18,13 @@ trial_arm = 'AJ'
 root_dir = '/mnt/md0/stampede/AJ-test' 
 ## Database name 
 db_filename = f'./outputs/audit/allScansData_{trial_arm}_TEST.db'
+
+## CPU cores to use when multiprocessing
 cpus_to_use=cpu_count()//2
 
-# Enter a path here to skip all directories prior to it. Useful if the script crashed and need to go back to the error.
-## Leave as empty string to ignore
-#end_skip = ''
-# 
 debug = False
+
+
 ## Tags to read from every dicom header
 header_keys = {
     'patient_id': '0010|0010', 
@@ -70,14 +70,13 @@ def main():
     paths_to_scan = glob.glob(os.path.join(root_dir, '*'))
     print(f"------ Processing {len(paths_to_scan)} paths in {root_dir} -------")
     
-    
-
     ## Add tasks to queue and allocate to separate workers
     task_queue = Queue()
     print('Finding directories to scan...')
     with Pool(cpus_to_use) as pool:
-        res = pool.map(filter_filepaths, [path for path in paths_to_scan])
+        res = pool.map(filter_directories, [path for path in paths_to_scan])
     
+    ## Flatten results from all workers
     tasks = [x for r in res for x in r]
     for t in tasks:
         task_queue.put(t)
@@ -97,14 +96,14 @@ def main():
 def process_directory(task_queue):
     while True:
         try:
-            path = task_queue.get(timeout=0.001)
+            job = task_queue.get(timeout=0.001)
         except Empty:
             print('Queue is empty')
             break
-        if path is None:
+        if job['path'] is None:
             print('No path')
             break
-        scan_directory(path)
+        scan_directory(job)
 
 ### HELPERS ###
 def create_connection(db_file):
@@ -142,8 +141,25 @@ def read_header(path):
             data[key] = None # For sql
     return data
 
+def fetch_missing_filepaths(directory):
+    ## If directory already in database but not all files are accounted for in dicomdb or errorsdb
+    ## Get files that need to be analysed
 
-def filter_filepaths(source):
+    ## Get files in dicomdb
+    with create_connection(db_filename) as conn:
+        conn.row_factory = lambda x: x[0]
+        cursor = conn.cursor()
+
+        paths_to_skip = cursor.execute(f"SELECT filepath FROM dicomdb WHERE dirname == {directory}").fetchall()
+        errors_to_skip = cursor.execute(f"SELECT filepath FROM errors WHERE dirname == {directory}").fetchall()
+        filepaths = {x for x in paths_to_skip} | {y for y in errors_to_skip} ## Union of both sets 
+
+    return filepaths
+
+def filter_directories(source):
+    ## Creates list of directories to scan
+    ## Drops directories that are already in the database
+
     paths = []
     for root, dirs, files in os.walk(source):
         if files:
@@ -153,7 +169,14 @@ def filter_filepaths(source):
                 #print('Skipping')
                 continue
             
+            ## If it has been processed but the length doesn't match, need to figure out what files to skip
+            if root in paths_to_skip and len(files) != paths_to_skip[root]:
+                filepaths = fetch_missing_filepaths(root)
+                paths.append({'path': filepaths, 'type': 'file'})
+                continue
+
             ## Skip these -- SimpleITK can't read them and they're not useful
+            ## This assumes directories are organised as: PatientID/Study Description/Series Description
             if '[CT - KEY IMAGES]' in root:
                 continue
             if '[PT - KEY IMAGES]' in root:
@@ -166,7 +189,9 @@ def filter_filepaths(source):
                 if root in paths_to_skip:
                     print(f'Found {len(files)} files but {paths_to_skip[root]} in database')
                 print(root)
-            paths.append(root)
+            
+            paths.append({'path': root, 'type': 'directory'})
+
     print(f"Found {len(paths)} paths to scan in {source}")
     return paths
 
@@ -176,18 +201,27 @@ def record_error(path, e):
     columns = ', '.join(err.keys())
     placeholders = ':'+', :'.join(err.keys())
     sql = """INSERT OR IGNORE INTO errors (%s) VALUES (%s)""" % (columns, placeholders)
-    conn = create_connection(db_filename)
-    cursor = conn.cursor()
     
-    with conn:
+    with create_connection(db_filename) as conn:
+        cursor = conn.cursor()
         cursor.execute(sql, err)
         conn.commit()
     
     #queue.put((sql, err))
 
-def scan_directory(path):
+def scan_directory(job):
+    path, type_ = job['path'], job['type']
+    if type_ == 'file':
+        ## Path is list of files to skip
+        files_to_skip = path
+        path = os.path.dirname(path[0])
+    else:
+        files_to_skip = []
+
     for file in tqdm(os.listdir(path), position=1, leave=False):
         filepath = os.path.join(path, file)
+        if type_ == 'file' and filepath in files_to_skip:
+            continue
 
         try:
             header = read_header(filepath)
@@ -220,10 +254,9 @@ def scan_directory(path):
         columns = ', '.join(header.keys())
         placeholders = ':'+', :'.join(header.keys())
         sql = """INSERT OR IGNORE INTO dicomdb (%s) VALUES (%s)""" % (columns, placeholders)      
-        
-        conn = create_connection(db_filename)
-        cursor = conn.cursor()
-        with conn:
+
+        with create_connection(db_filename) as conn:
+            cursor = conn.cursor()
             cursor.execute(sql, header)
             conn.commit()
             
