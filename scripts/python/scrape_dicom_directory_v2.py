@@ -144,17 +144,16 @@ def read_header(path):
 def fetch_missing_filepaths(directory):
     ## If directory already in database but not all files are accounted for in dicomdb or errorsdb
     ## Get files that need to be analysed
-
     ## Get files in dicomdb
     with create_connection(db_filename) as conn:
-        conn.row_factory = lambda x: x[0]
+        conn.row_factory = lambda cursor, row: row[0]
         cursor = conn.cursor()
 
-        paths_to_skip = cursor.execute(f"SELECT filepath FROM dicomdb WHERE dirname == {directory}").fetchall()
-        errors_to_skip = cursor.execute(f"SELECT filepath FROM errors WHERE dirname == {directory}").fetchall()
+        paths_to_skip = cursor.execute(f"SELECT filepath FROM dicomdb WHERE dirname LIKE '{directory}';").fetchall()
+        errors_to_skip = cursor.execute(f"SELECT filepath FROM errors WHERE dirname LIKE '{directory}';").fetchall()
         filepaths = {x for x in paths_to_skip} | {y for y in errors_to_skip} ## Union of both sets 
 
-    return filepaths
+    return list(filepaths)
 
 def filter_directories(source):
     ## Creates list of directories to scan

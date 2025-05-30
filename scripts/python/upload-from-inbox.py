@@ -12,7 +12,7 @@ import time
 import polars as pl
 from datetime import datetime
 
-PROJECT='STAMPEDE-ACE'
+PROJECT='STAMPEDE-AG'
 #path_to_cert = '/mnt/d/xnat/XNAT-stampede/configs/xnat-release/ssl/xnat-vagrant-CA.pem' 
 #'D:\\xnat\\XNAT-stampede\\configs\\xnat-release\\ssl\\xnat-vagrant-CA.pem'
 #url = 'https://release.xnat.org'
@@ -66,7 +66,10 @@ def main_loop(source_dir, batch):
     for upload in tqdm(experiments_to_upload):
         expt_id = upload.replace(source_dir, '')
         subject_id = expt_id.split('_')[0]
-        path = upload.replace(source_dir, f'/data/xnat/inbox/{PROJECT}/{batch}/')
+        if batch is None:
+            path = upload.replace(source_dir, f'/data/xnat/inbox/{PROJECT}/')
+        else:
+            path = upload.replace(source_dir, f'/data/xnat/inbox/{PROJECT}/{batch}/')
         if expt_id in experiments_to_skip:
             print(f'SKipping {expt_id}')
             continue
@@ -92,17 +95,19 @@ def main_loop(source_dir, batch):
 
 def main():
     #batches = ['batch_1', 'batch_2', 'batch_3', 'batch_4', 'batch_5', 'batch_6', 'batch_7', 'batch_8', 'batch_9', 'batch_10']
-    batches=['batch_1']
+    batches=None
     #failed_outputs = {}
-    for batch in batches:
-        #source_dir = f'D:\\xnat\\1.8\\inbox\\STAMPEDE-AJ\\{batch}\\'
-        #source_dir = f'/mnt/d/xnat/1.8/inbox/STAMPEDE-AJ/{batch}/'
-        source_dir=f'/mnt/h/ACE_batches_to_upload/{batch}/'
-        _ = main_loop(source_dir, batch)
+    
+    if batches is not None:
+        for batch in batches:
+            #source_dir = f'D:\\xnat\\1.8\\inbox\\STAMPEDE-AJ\\{batch}\\'
+            source_dir = f'/mnt/d/xnat/1.8/inbox/{PROJECT}/'
+            # source_dir=f'/mnt/h/ACE_batches_to_upload/{batch}/'
+            _ = main_loop(source_dir, batch)
 
-        #df = pl.from_dict(failed_outputs)
-        #df.write_csv(f'./outputs/failed_uploads_{PROJECT}_{batch}.csv')
-        
+    else:
+        source_dir = f'/mnt/d/xnat/1.8/inbox/{PROJECT}/'
+        _ = main_loop(source_dir, batches) 
 
 if __name__ == '__main__':
     main()
