@@ -9,21 +9,16 @@ import sqlite3
 from tqdm import tqdm
 import SimpleITK as sitk
 import traceback
-from multiprocessing import Pool, cpu_count
-import gc
+
 ## PATHS
+OS = 'UNIX' # or UNIX --- this is just to handle different paths
+root_dir = '/mnt/j/All Scans/' 
 
-# Path to raw data
-root_dir = '/mnt/md0/stampede/AJ-test' 
 
-# What trial arm does the data belong to?
-trial_arm = 'AJ'
 
-# Enter a path here to skip all directories prior to it. Useful if the script crashed and need to go back to the error.
-## Leave as empty string to ignore
-end_skip = ''
-
-## Tags to read from every dicom header
+#root_dir = 'G:\\ArmK\\DICOM\\'
+arms_to_check = ['ACE']#'ACE' 'AG''AH',
+# skippable = ['SR Dose Report', '] 
 header_keys = {
     'patient_id': '0010|0010', 
     'series_date':'0008|0021',
@@ -34,7 +29,7 @@ header_keys = {
     'acquisition_date': '0008|0022'
 }
 
-#++++++++++++++  DATABASE SCHEMAS ++++++++++++++++++++
+#++++++++++++++  Database
 schema = """CREATE TABLE IF NOT EXISTS dicomdb (
     id integer PRIMARY KEY,
     patient_id text NOT NULL,
@@ -42,7 +37,6 @@ schema = """CREATE TABLE IF NOT EXISTS dicomdb (
     series_uid text NOT NULL,
     study_uid text NOT NULL,
     filepath text NOT NULL,
-    dirname text NOT NULL,
     modality text,
     series_date text,
     study_date text,
@@ -52,55 +46,8 @@ schema = """CREATE TABLE IF NOT EXISTS dicomdb (
 error_schema = """CREATE TABLE IF NOT EXISTS errors (
     id integer PRIMARY KEY,
     filepath text NOT NULL,
-    dirname text NOT NULL,
     error text NOT NULL);"""
-
-#### +++++++++++++++++++++++++++++++++++++++++++++++++
-
-##### ================= MAIN PROCESS =======================
-def main():
-    # Setup logic to skip paths if end_skip is defined
-    if end_skip:
-        skip=True
-    else: 
-        skip=False
-
-    init_db(f'./outputs/audit/allScansData_{trial_arm}_TEST.db')
-    
-    ## Go through source dir and get paths to process
-    paths_to_scan = glob.glob(os.path.join(root_dir, '*'))
-    print(f"------ Processing {len(paths_to_scan)} paths in {root_dir} -------")
-    
-    ## Split paths amongst workers
-    cpus = cpu_count()//2
-    pool = Pool(processes=cpus)
-    print(f'Allocating {cpus} cpus to the job!')
-    #pool.map_async
-    
-    #for path in paths_to_scan:
-        # if path == end_skip:
-        #     skip = False
-
-        # if skip:
-        #     continue
-            #print(f'Scanning {path}')
-
-
-        #print(f'Adding {path} to Pool')
-    pool.map(thread_process, paths_to_scan)
-    pool.close()
-    #pool.join()
-
-    conn.close()
-
-def thread_process(path):
-    filepaths = filter_filepaths(path)
-    if not filepaths: #If empty:
-        return
-    collect_subject_info(filepaths, trial_arm)
-
-####=============================================================
-
+#### +++++++++++++++++
 
 ### HELPERS ###
 def create_connection(db_file):
@@ -139,8 +86,8 @@ def read_header(path):
     return data
 
 def record_error(path, e):
-    #print('ERROR:', e)
-    err = {'filepath': path, 'error': str(e), 'dirname': os.path.dirname(path)}
+    print('ERROR:', e)
+    err = {'filepath': path, 'error': str(e)}
     columns = ', '.join(err.keys())
     placeholders = ':'+', :'.join(err.keys())
     sql = """INSERT INTO errors (%s) VALUES (%s)""" % (columns, placeholders)
@@ -151,11 +98,23 @@ def filter_filepaths(source):
     paths = []
     for root, dirs, files in os.walk(source):
         if files:
-            ## If this directory has been processed and all the files have been accounted for..
-            if root in paths_to_skip and len(files) == paths_to_skip[root]:
-                continue
+            #for file in files:
+            #filepath = os.path.join(root, file)
+            if OS == 'WINDOWS':
+                unix_stem = root.lstrip(root_dir).replace('\\', '/')
+                if unix_stem in paths_to_skip:
+                    continue
+            else:
+                windows_stem = root.lstrip(root_dir).replace('/', '\\')
+                if windows_stem in paths_to_skip:
+                    continue
+                elif root.lstrip(root_dir) in paths_to_skip:
+                    continue
+                # if root in paths_to_skip:
+                #     continue
             
-            ## Skip these -- SimpleITK can't read them and they're not useful
+
+
             if '[CT - KEY IMAGES]' in root:
                 continue
             if '[PT - KEY IMAGES]' in root:
@@ -163,16 +122,17 @@ def filter_filepaths(source):
             if '[NM - SAVE SCREENS]' in root:
                 continue
 
-            #print("APPENDING: ", root)
+
+            print("APPENDING: ", root)
             paths.append(root)
-    print(f"Found {len(paths)} paths to scan in {source}")
+    print(f"Found {len(paths)} paths to scan.")
     return paths
 
 def collect_subject_info(paths, arm):
     for path in paths:
         for file in tqdm(os.listdir(path), position=1, leave=False):
             filepath = os.path.join(path, file)
-
+            #print(filepath)
             try:
                 header = read_header(filepath)
             except Exception as e:
@@ -185,8 +145,7 @@ def collect_subject_info(paths, arm):
             header['filepath'] = filepath
             header['trial_arm'] = arm
 
-            ##  These entries can't be null in DB schema--if empty replace with filename
-            ## Should be very rare that these are empty but allows user to find the files and manually get info if needed.
+            #print(filepath)
 
             if header['patient_id'] is None:
                 header['patient_id'] = filepath
@@ -196,9 +155,6 @@ def collect_subject_info(paths, arm):
 
             if header['study_uid'] is None:
                 header['study_uid'] = filepath
-
-            # Get dirname 
-            header['dirname'] = os.path.dirname(filepath)
 
             # Insert into db
             columns = ', '.join(header.keys())
@@ -220,27 +176,50 @@ def init_db(db_filename):
     
     ## Get filepaths already analysed
     global paths_to_skip
-
-    ## Figure out directories to skip and number of files.
-    dicoms_to_skip = cursor.execute(f"SELECT dirname, COUNT(*) FROM dicomdb GROUP BY dirname").fetchall()
-    ## Convert to a dict
-    paths_to_skip = {k: v for k, v in dicoms_to_skip}
-
-    ## Repeat for files in the errors
-    errors_to_skip = cursor.execute(f"SELECT dirname, COUNT(*) FROM errors GROUP BY dirname").fetchall()
-
-    ## Aggregate total number of files scanned in the directory
-    for (path, num_files) in errors_to_skip:
-        if path in paths_to_skip:
-            paths_to_skip[path] += num_files
-        else:
-            paths_to_skip[path] = num_files    
-    print(f"----- Paths to skip: {len(paths_to_skip.keys())} -----")
+    cursor.row_factory = lambda cursor, row: row[0]
+    paths_to_skip = cursor.execute(f"SELECT DISTINCT filepath from dicomdb").fetchall()
+    if OS == 'WINDOWS':
+        paths_to_skip = {os.path.dirname(x).lstrip(unix_root_dir) for x in paths_to_skip}
+    else:
+        paths_to_skip = {os.path.dirname(x).lstrip(root_dir) if root_dir in x else os.path.dirname(x) for x in paths_to_skip }
     
-    ## Delete from memory
-    del dicoms_to_skip, errors_to_skip
-    gc.collect()
+    
+    ## Skip the errors
+    errors_to_skip = cursor.execute(f'SELECT DISTINCT filepath from errors').fetchall()
+    if OS == 'WINDOWS':
+        errors_to_skip = {os.path.dirname(x).lstrip(unix_root_dir) for x in paths_to_skip}
+    else:
+        errors_to_skip = {os.path.dirname(x).lstrip(root_dir) if root_dir in x else os.path.dirname(x) for x in errors_to_skip }
+    
+    print(f"----- Paths to skip: {len(paths_to_skip)} -----")
+    cursor.row_factory = sqlite3.Row
+    paths_to_skip = paths_to_skip | errors_to_skip # union of two sets
 
+def main():
+    skip = False # Use this as a flag to quickly skip all directories up to end_skip 
+    end_skip = '/mnt/j/All\\ Scans/' #! THIS NEEDS TO BE UPDATED
+
+    for arm in arms_to_check:
+        init_db(f'./outputs/audit/allScansData_{arm}.db')
+        #TODO replace with commented out line if not scanning AK.
+        #source_dir = root_dir
+        source_dir = os.path.join(root_dir, arm)
+        
+        ## Go through source dir and get paths to process
+        paths_to_scan = glob.glob(os.path.join(source_dir, '*'))
+        print(f"------ Processing {len(paths_to_scan)} paths in {source_dir} -------")
+        
+        ## Walk through source directory & collect all series info
+        for path in tqdm(paths_to_scan, position=0):
+            if path == end_skip:
+                skip = False
+            
+            if skip:
+                continue
+
+            print(f'Scanning {path}')
+            filepaths = filter_filepaths(path)
+            collect_subject_info(filepaths, arm)
 
 if __name__ == '__main__':
     main()
