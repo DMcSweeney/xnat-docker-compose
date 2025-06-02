@@ -17,7 +17,7 @@ trial_arm = 'AJ'
 # Path to raw data
 root_dir = '/mnt/md0/stampede/AJ-test' 
 ## Database name 
-db_filename = f'./outputs/audit/allScansData_{trial_arm}_TEST.db'
+db_filename = f'./outputs/audit/allScansData_{trial_arm}_TEST_v3.db'
 
 ## CPU cores to use when multiprocessing
 cpus_to_use=cpu_count()//2
@@ -27,13 +27,13 @@ SKIP_DIR_PATTERN = ['[CT - KEY IMAGES]', '[PT - KEY IMAGES]', '[NM - SAVE SCREEN
 
 ## Tags to read from every dicom header
 header_keys = {
-    'patient_id': '0010|0010', 
-    'series_date':'0008|0021',
-    'study_date': '0008|0020',
-    'series_uid': '0020|000e',
-    'study_uid': '0020|000d',
-    'modality': '0008|0060',
-    'acquisition_date': '0008|0022'
+    'patient_id': (0x0010, 0x0010), 
+    'series_date':(0x0008, 0x0021),
+    'study_date': (0x0008, 0x0020),
+    'series_uid': (0x0020, 0x000e),
+    'study_uid': (0x0020,0x000d),
+    'modality': (0x0008,0x0060),
+    'acquisition_date': (0x0008, 0x0022)
 }
 
 #++++++++++++++  DATABASE SCHEMAS ++++++++++++++++++++
@@ -96,19 +96,20 @@ def main():
 def process_directory(task_queue):
     while True:
         try:
-            job = task_queue.get(timeout=0.001)
+            path = task_queue.get(timeout=0.001)
         except Empty:
             print('Queue is empty')
             break
-        if job['path'] is None:
+        if path is None:
             print('No path')
             break
-        data = scan_directory(job)
+        data = scan_directory(path)
 
         with create_connection(db_filename) as conn:
             cursor = conn.cursor()
-            for sql, item in data.items():
-                cursor.execute(sql, err)
+            for elem in data:
+                sql, item = elem['sql'], elem['header']
+                cursor.execute(sql, item)
             conn.commit()
 
 ### HELPERS ###
@@ -132,7 +133,8 @@ def read_header(path):
     ds = pydicom.dcmread(path, stop_before_pixels=True)
     data = {}
     for key, tag in header_keys.items():
-        data[key] = str(ds[tag]) if tag in ds else None
+        group, element = tag
+        data[key] = str(ds[group, element].value) if [group, element] in ds else None
     return data
 
 def filter_directories(source):
@@ -201,7 +203,7 @@ def scan_directory(path):
             placeholders = ':'+', :'.join(header.keys())
             sql = """INSERT OR IGNORE INTO dicomdb (%s) VALUES (%s)""" % (columns, placeholders)      
 
-            data.append('sql': sql, 'header': header)
+            data.append({'sql': sql, 'header': header})
 
     return data
 
@@ -238,4 +240,7 @@ def init_db(db_filename):
 
 
 if __name__ == '__main__':
+    start = time.time()
     main()
+    end = time.time()
+    print(f'Script finished in: {end - start}')

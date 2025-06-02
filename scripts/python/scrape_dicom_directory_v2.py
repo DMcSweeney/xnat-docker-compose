@@ -12,6 +12,8 @@ import time
 from multiprocessing import Process, Queue, Pool, Manager, cpu_count
 from queue import Empty
 
+
+
 # What trial arm does the data belong to?
 trial_arm = 'AJ'
 # Path to raw data
@@ -295,4 +297,7 @@ def init_db(db_filename):
 
 
 if __name__ == '__main__':
+    start = time.time()
     main()
+    end = time.time()
+    print(f'Script finished in: {end - start}')
